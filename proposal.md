@@ -10,7 +10,7 @@
 
 With the rapid advancement of Large Language Models (LLMs) and the essential role that search engines play in our daily lives, search trends from specific countries, such as Vietnam, offer valuable insights that can benefit a variety of stakeholders. These insights can inform decision-makers, businesses, researchers, and the general public about current trends and hot topics. To provide a deeper understanding of these trends, we propose the development of an interactive dashboard that leverages the Google Trends API to compare the popularity of different keywords over time. 
 
-This tool will enable users to explore how search interest for selected keywords evolves, providing insights into public interest trends. By incorporating LLMs, we aim to offer real-time analysis that presents relevant, actionable data, which is crucial for both businesses and researchers.
+This tool will enable users to explore how search interest for selected keywords evolves, providing insights into public interest trends. By incorporating LLMs, we aim to offer **real-time analysis** that presents relevant, actionable data, which is crucial for both businesses and researchers.
 
 ### **Research Question**
 
@@ -27,7 +27,7 @@ This investigation will help uncover the relative public interest in each keywor
 
 Our primary motivation behind creating this tool is to build a practical, user-friendly dashboard that can provide immediate, meaningful insights into trending keywords. We want this tool to be accessible to individuals, even those without a technical background, to help them quickly grasp public interest in various topics. This dashboard will not only present trends over time but also break down data by subregions, offering localized insights. Additionally, it will explore correlations between keywords, making it easier to draw conclusions and identify patterns.
 
-The dashboard aims to address the following key applications:
+The following are some applications:
 - **Business and Marketing**: Companies can use the tool to gauge the popularity of their products, services, or brands, and adjust their strategies accordingly.
 - **Public Interest**: Researchers and policymakers can track the evolution of public interest in various topics over time, helping them better understand societal shifts.
 - **Forecasting**: By analyzing historical trends, this tool can assist in forecasting the future popularity of specific keywords or topics.
@@ -36,7 +36,7 @@ This tool will be particularly beneficial for individuals who are not familiar w
 
 ### **Project Scope and Limitations**
 
-Due to time constraints, the scope of the project will be limited. The dashboard will support the analysis of only three (3) keywords at a time, and the analysis will be limited to four predefined chart types. Additionally, the length of the LLM-generated analysis will be kept concise for user readability. The dashboard will feature the following visualizations:
+Due to time constraints, the scope of the project will be limited. The dashboard will support the analysis of only *three (3)* keywords at a time, and the analysis will be limited to four predefined chart types. Additionally, the length of the LLM-generated analysis will be kept concise for user readability. The dashboard will feature the following visualizations:
 
 1. **Bar Chart**: Displays the average number of searches for each keyword over a given time period.
 2. **Line Chart**: Tracks how the search interest fluctuates over time for each keyword.
