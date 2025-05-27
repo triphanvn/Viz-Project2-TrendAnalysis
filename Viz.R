@@ -20,6 +20,24 @@ library(dplyr)
 library(geodata)
 library(stringr)
 library(stringi)
+library(gemini.R)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+analysis_text <- "Okay, let's analyze the Google Trends data for \"iphone\" and \"samsung\" from May 2020 to May 2025.
+
+**\"iphone\" Trend Analysis:**
+
+The search interest for \"iphone\" shows a clear cyclical pattern. We observe peaks every year around September. This is strongly correlated with the typical timeframe for Apple's annual iPhone releases, indicating a surge of interest driven by new product announcements and subsequent launches. Looking at the long-term trend, while there are fluctuations, the overall search interest appears to be slightly declining in recent years, especially when comparing peak values from 2020-2022 to 2023-2025. A minor peak can be found at the start of the year, around January/February.
+
+**\"samsung\" Trend Analysis:**
+
+The search interest for \"samsung\" is generally lower and more stable compared to \"iphone\". There are no sharp peaks as evident as those for \"iphone\" around September, the general level of search volume is lower. However, we notice slight bumps in search volume around January/February, which could possibly correlated with the release of Samsung's S-series phones. Unlike iPhone, the long-term trend for \"samsung\" searches shows a clearer decline over the years, with interest significantly lower in 2023-2025 than in 2020-2022.
+
+**Correlation and Relationship:**
+
+The keywords \"iphone\" and \"samsung\" are in the same product category (smartphones), there's likely a competitive relationship reflected in the search data. While there's no strong positive correlation where one *directly* triggers the other, the data suggests an *inverse* relationship, or at least an *opportunity cost* dynamic. As \"iphone\" searches spike around release dates, \"samsung\" searches don't necessarily increase. This suggests that people actively interested in the iPhone release are less likely to be searching for Samsung at the same time. The small peaks in search volume at the start of each year suggests a similar effect. They are competing brands in a similar product category, therefore it is reasonable to assume that the search volumes will reflect this competition, although the Google Trend data does not offer enough information to infer direct relationship."
+
 
 # Convert province to English
 clean_location_names <- function(loc_vec) {
@@ -52,15 +70,16 @@ ui <- fluidPage(
     column(2, br(), actionButton("analyze", "Analyze"))
   ),
   fluidRow(
+    h4("Interest over time", style = "margin-left: 20px;"),
     column(3, plotOutput("barPlot", height = "200px")),
     column(9, plotlyOutput("lineChart", height = "200px"))
   ),
   fluidRow(
-    column(6, leafletOutput("map", height = "300px")),
-    column(6, plotlyOutput("scatterPlot", height = "300px"))
+    column(5, leafletOutput("map", height = "300px")),
+    column(7, plotlyOutput("scatterPlot", height = "300px"))
   ),
-  h4("LLM-generated Analysis"),
-  verbatimTextOutput("llm_output")
+  h4("LLM-generated Analysis", style = "margin-left: 20px;"),
+  tags$pre(style = "white-space: pre-wrap; word-wrap: break-word;", textOutput("llm_output"))
 )
 
 # Server
@@ -119,21 +138,56 @@ server <- function(input, output, session) {
     
     plot_ly(df, x = ~date, y = ~hits, color = ~keyword,
             colors = cols,
-            type = 'scatter', mode = 'lines')
+            type = 'scatter', mode = 'lines')%>%
+      layout(
+        xaxis = list(title = "Date"),
+        yaxis = list(title = "Search Interest (Hits)"),
+        legend = list(
+          title = list(text = "Keywords"),
+          x = 1,
+          xanchor = "left",
+          y = 1
+        )
+      )
   })
   
-  # Scatter plot with consistent colors (optional, if you have one)
-  output$scatterPlot <- renderPlotly({
-    res <- results()
-    if (is.null(res)) return(NULL)
-    df <- res$interest_over_time
-    cols <- keyword_colors()
-    
-    plot_ly(df, x = ~date, y = ~hits, color = ~keyword,
-            colors = cols,
-            type = "scatter", mode = "markers")
-  })
+  # # Scatter plot with consistent colors (optional, if you have one)
+  # output$scatterPlot <- renderPlotly({
+  #   res <- results()
+  #   if (is.null(res)) return(NULL)
+  #   df <- res$interest_over_time
+  #   cols <- keyword_colors()
+  #   
+  #   plot_ly(df, x = ~date, y = ~hits, color = ~keyword,
+  #           colors = cols,
+  #           type = "scatter", mode = "markers")
+  # })
+ 
+output$scatterPlot <- renderPlotly({
+  res <- results()
+  if (is.null(res)) return(NULL)
+  df <- res$interest_over_time
   
+  # Filter to two keywords only
+  kws <- unique(df$keyword)
+  if(length(kws) < 2) return(NULL)
+  if(length(kws) > 2) kws <- kws[1:2]
+  
+  # Reshape data wide: each keyword's hits in its own column
+  library(tidyr)
+  df_wide <- df %>% 
+    filter(keyword %in% kws) %>%
+    select(date, keyword, hits) %>%
+    pivot_wider(names_from = keyword, values_from = hits)
+  
+  plot_ly(df_wide, x = ~get(kws[1]), y = ~get(kws[2]), type = 'scatter', mode = 'markers') %>%
+    layout(
+      xaxis = list(title = kws[1]),
+      yaxis = list(title = kws[2]),
+      title = paste("Scatter plot of", kws[1], "vs", kws[2], "hits")
+    )
+})
+   
   output$map <- renderLeaflet({
     res <- results()
     if (is.null(res)) return(NULL)
@@ -203,14 +257,37 @@ server <- function(input, output, session) {
       )
   })
   
-
-  # output$llm_output <- renderText({
-  #   res <- results()
-  #   if (is.null(res)) return("Awaiting input...")
-  #   df <- res$interest_over_time
-  #   text_input <- paste(capture.output(head(df, 20)), collapse = "\n")
-  #   get_llm_analysis(text_input)
-  # })
+  output$llm_output <- renderText({
+    res <- results()
+    if (is.null(res)) return("Awaiting input...")
+    
+    df <- res$interest_over_time
+    
+    # Prepare a brief summary of trend data as text input
+    # For simplicity, take the first 20 rows and format key info
+    trend_summary <- paste(
+      apply(df, 1, function(row) {
+        paste0(
+          "Date: ", row["date"], 
+          ", Keyword: ", row["keyword"], 
+          ", Hits: ", row["hits"]
+        )
+      }),
+      collapse = "\n"
+    )
+    
+    # Construct prompt for Gemini
+    prompt <- paste0(
+      "You are a data analyst. Based on the following Google Trends data over time:\n",
+      trend_summary,
+      "\nPlease write 3 to 5 sentences analyzing the trend of each keyword, and conclude any correlation or relationship between them. ",
+      "For example, if people search for keyword 1, they tend to also search for keyword 2. Provide an insightful trend analysis."
+    )
+    
+    # Call Gemini LLM
+    # gemini(prompt)
+    analysis_text
+  })
 }
 
 # Run app
