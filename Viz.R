@@ -6,7 +6,8 @@ options(repos = r)
 #install.packages(c("shiny", "gtrendsR", "plotly", "leaflet", "sf", "httr", "jsonlite", "dplyr"))
 #install.packages(c("rnaturalearth", "rnaturalearthdata"), dependencies = FALSE)
 #install.packages("geodata")
-#install.packages("openai")
+#install.packages("shinybusy")
+#install.packages("gemini.R") # https://github.com/jhk0530/gemini.R
 
 # Load libraries
 library(shiny)
@@ -23,20 +24,26 @@ library(stringi)
 library(gemini.R)
 library(rnaturalearth)
 library(rnaturalearthdata)
+# library(shinybusy)
 
-analysis_text <- "Okay, let's analyze the Google Trends data for \"iphone\" and \"samsung\" from May 2020 to May 2025.
+# Load Gemini API key, https://ai.google.dev/gemini-api/docs/api-key
+# setAPI()
 
-**\"iphone\" Trend Analysis:**
+# Load sample LLM analysis
+all_analysis_text <- readLines("llm_output_5.txt", warn = FALSE) %>% paste(collapse = "\n")
 
-The search interest for \"iphone\" shows a clear cyclical pattern. We observe peaks every year around September. This is strongly correlated with the typical timeframe for Apple's annual iPhone releases, indicating a surge of interest driven by new product announcements and subsequent launches. Looking at the long-term trend, while there are fluctuations, the overall search interest appears to be slightly declining in recent years, especially when comparing peak values from 2020-2022 to 2023-2025. A minor peak can be found at the start of the year, around January/February.
+# --- Split into five parts using regex ---
+analysis_parts <- strsplit(all_analysis_text, "# Sample [0-9]+")[[1]]
 
-**\"samsung\" Trend Analysis:**
+# Note: strsplit will leave an empty string at the start if the file starts with "# Sample 1"
+analysis_parts <- analysis_parts[nzchar(analysis_parts)]  # remove empty
 
-The search interest for \"samsung\" is generally lower and more stable compared to \"iphone\". There are no sharp peaks as evident as those for \"iphone\" around September, the general level of search volume is lower. However, we notice slight bumps in search volume around January/February, which could possibly correlated with the release of Samsung's S-series phones. Unlike iPhone, the long-term trend for \"samsung\" searches shows a clearer decline over the years, with interest significantly lower in 2023-2025 than in 2020-2022.
-
-**Correlation and Relationship:**
-
-The keywords \"iphone\" and \"samsung\" are in the same product category (smartphones), there's likely a competitive relationship reflected in the search data. While there's no strong positive correlation where one *directly* triggers the other, the data suggests an *inverse* relationship, or at least an *opportunity cost* dynamic. As \"iphone\" searches spike around release dates, \"samsung\" searches don't necessarily increase. This suggests that people actively interested in the iPhone release are less likely to be searching for Samsung at the same time. The small peaks in search volume at the start of each year suggests a similar effect. They are competing brands in a similar product category, therefore it is reasonable to assume that the search volumes will reflect this competition, although the Google Trend data does not offer enough information to infer direct relationship."
+# Assign to variables (you can also keep them as a list)
+analysis_text_1 <- trimws(analysis_parts[1])
+analysis_text_2 <- trimws(analysis_parts[2])
+analysis_text_3 <- trimws(analysis_parts[3])
+analysis_text_4 <- trimws(analysis_parts[4])
+analysis_text_5 <- trimws(analysis_parts[5])
 
 
 # Convert province to English
@@ -51,8 +58,8 @@ clean_location_names <- function(loc_vec) {
     # Replace specific names (add spaces, fix spelling)
     str_replace_all(c(
       "^Hanoi$" = "Ha Noi",
-      "^HoChiMinh$" = "Ho Chi Minh"  # example if needed
-      # Add more replacements here if needed
+      "^HoChiMinh$" = "Ho Chi Minh",
+      "^Haiphong$" = "Hai Phong"
     ))
 }
 
@@ -60,74 +67,166 @@ clean_location_names <- function(loc_vec) {
 vietnam_geo <- gadm(country = "VNM", level = 1, path = tempdir()) %>% 
   sf::st_as_sf()
 
+# Load sample data
+load("res1.RData")
+load("res2.RData")
+load("res3.RData")
+load("res4.RData")
+load("res5.RData")
+
 # UI
 ui <- fluidPage(
-  tags$h3("Search Trend Analysis Dashboard", style = "color:#800000; font-family:monospace; background-color:#fff3cd; padding:10px;"),
-  fluidRow(
-    column(2, textInput("kw1", "Keyword 1", "")),
-    column(2, textInput("kw2", "Keyword 2", "")),
-    column(2, textInput("kw3", "Keyword 3", "")),
-    column(2, br(), actionButton("analyze", "Analyze"))
+  tags$h3(
+    icon("chart-line"), " Search Trend Analysis Dashboard",
+    style = "color:#800000; font-family:monospace; background-color:#fff3cd; padding:10px; border-radius: 8px; box-shadow: 2px 2px 6px rgba(0,0,0,0.1);"
   ),
+  
   fluidRow(
-    h4("Interest over time", style = "margin-left: 20px;"),
-    column(3, plotOutput("barPlot", height = "200px")),
-    column(9, plotlyOutput("lineChart", height = "200px"))
+      column(3,
+             div(style = "display: flex; align-items: center;",
+                 div(style = "width: 25px; height: 25px; background-color: #1f77b4; margin-right: 8px;"),
+                 textInput("kw1", tagList(icon("search"), "Keyword 1"), "")
+             )
+      ),
+      column(3,
+             div(style = "display: flex; align-items: center;",
+                 div(style = "width: 25px; height: 25px; background-color: #ff7f0e; margin-right: 8px;"),
+                 textInput("kw2", tagList(icon("search"), "Keyword 2"), "")
+             )
+      ),
+      column(3,
+             div(style = "display: flex; align-items: center;",
+                 div(style = "width: 25px; height: 25px; background-color: #2ca02c; margin-right: 8px;"),
+                 textInput("kw3", tagList(icon("search"), "Keyword 3"), "")
+             )
+      ),
+    column(2, selectInput("data_source", tagList(icon("database"), "Samples"),
+                          choices = c("Sample 1", "Sample 2", "Sample 3", "Sample 4", "Sample 5", "Online"),
+                          selected = "Sample 1")),
+    column(1, br(), actionButton("analyze", tagList(icon("play"), "Analyze"), class = "btn btn-primary"))
   ),
-  fluidRow(
-    column(5, leafletOutput("map", height = "300px")),
-    column(7, plotlyOutput("scatterPlot", height = "300px"))
+  
+  wellPanel(
+    h4(icon("chart-bar"), " Interest Over Time", style = "margin-left: 10px; color: #004085;"),
+    fluidRow(
+      column(3, plotOutput("barPlot", height = "200px")),
+      column(9, plotlyOutput("lineChart", height = "200px"))
+    ),
+    
+    br(),
+    
+    fluidRow(
+      column(5,
+             h4(icon("globe"), " Compared Breakdown by Province", style = "color: #004085;"),
+             leafletOutput("map", height = "400px")
+      ),
+      
+      column(7,
+             h4(icon("stream"), " Keyword Trends", style = "color: #004085;"),
+             plotlyOutput("streamgraphPlot", height = "400px")
+      )
+    )
   ),
-  h4("LLM-generated Analysis", style = "margin-left: 20px;"),
-  tags$pre(style = "white-space: pre-wrap; word-wrap: break-word;", textOutput("llm_output"))
+  
+  wellPanel(
+    h4(icon("robot"), " LLM-generated Analysis", style = "margin-left: 10px; color: #004085;"),
+    tags$pre(style = "white-space: pre-wrap; word-wrap: break-word; font-size: 16px; background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; border-radius: 5px;",
+             textOutput("llm_output"))
+  ),
+  tags$div(
+    style = "margin-top: 20px; font-size: 12px; color: #6c757d;",
+    tags$p("1) This dashboard utilizes an unofficial Google Trends API; the presented results may differ from those displayed on the official Google Trends website."),
+    tags$p("2) The LLM-generated analyses are for informational purposes only and may contain inaccuracies. Users are advised to independently verify all insights and conclusions."),
+    tags$p("3) Dashboard designed and developed by Doan Quang Hung and Phan Minh Tri.")
+  )
 )
+
 
 # Server
 server <- function(input, output, session) {
-  
   # Define consistent colors for keywords dynamically
   keyword_colors <- reactive({
     res <- results()
     if (is.null(res)) return(NULL)
     kws <- unique(res$interest_over_time$keyword)
-    # Choose any palette or fixed colors
+    # Example palette (recycled if needed)
+    # palette <- RColorBrewer::brewer.pal(max(3, length(kws)), "Set2")
     palette <- c("#1f77b4", "#ff7f0e", "#2ca02c")  # blue, orange, green
-    # Map keyword to color (length might vary, so recycle if needed)
     setNames(palette[1:length(kws)], kws)
   })
   
+  # Reactive: get the correct dataset or gtrends result
+  selected_data <- reactive({
+    switch(input$data_source,
+           "Sample 1" = res,
+           "Sample 2" = res2,
+           "Sample 3" = res3,
+           "Sample 4" = res4,
+           "Sample 5" = res5,
+           "Online" = NULL)
+  })
+  
+  # Observe selection and update textInputs with keywords (if in sample mode)
+  observeEvent(input$data_source, {
+    if (input$data_source != "Online") {
+      sample_res <- selected_data()
+      # Example: extract first 3 keywords from the dataset (adjust to your structure!)
+      kw <- head(unique(sample_res$interest_over_time$keyword), 3)
+      updateTextInput(session, "kw1", value = ifelse(length(kw) >= 1, kw[1], ""))
+      updateTextInput(session, "kw2", value = ifelse(length(kw) >= 2, kw[2], ""))
+      updateTextInput(session, "kw3", value = ifelse(length(kw) >= 3, kw[3], ""))
+    } else {
+      # Online mode: clear inputs
+      updateTextInput(session, "kw1", value = "")
+      updateTextInput(session, "kw2", value = "")
+      updateTextInput(session, "kw3", value = "")
+    }
+  })
+  
+  # Event when Analyze button is clicked
   results <- eventReactive(input$analyze, {
     kw <- c(input$kw1, input$kw2, input$kw3)
     kw <- kw[kw != ""]
     if (length(kw) == 0) return(NULL)
-    res
-    # gtrends(kw, gprop = "web", time = "today 3-m", geo = "VN")
+    
+    if (input$data_source == "Online") {
+      gtrends(kw, gprop = "web", time = "today 3-m", geo = "VN")
+    } else {
+      selected_data()
+    }
   })
   
   # Bar plot
   output$barPlot <- renderPlot({
     res <- results()
     if (is.null(res)) return(NULL)
-
+    
     df <- res$interest_over_time
     df$hits <- as.numeric(as.character(df$hits))
     df <- df[!is.na(df$hits), ]
-
-    avg_hits <- tapply(df$hits, df$keyword, mean)
-
+    
+    # Calculate average hits per keyword
+    avg_df <- aggregate(hits ~ keyword, data = df, FUN = mean, na.rm = TRUE)
+    
+    # Get colors (if you want to keep using your custom palette)
     cols <- keyword_colors()
-    bar_cols <- cols[names(avg_hits)]
-
-    barplot(avg_hits,
-            main = "Average Hits",
-            col = bar_cols,
-            horiz = FALSE,
-            ylab = "Average Hits",
-            xlab = NULL,
-            las = 2,
-            names.arg = rep("", length(avg_hits))
-            )
+    avg_df$color <- cols[avg_df$keyword]
+    
+    ggplot(avg_df, aes(x = keyword, y = hits, fill = keyword)) +
+      geom_bar(stat = "identity") +
+      geom_text(aes(label = round(hits, 1)), vjust = -0.5) +
+      scale_fill_manual(values = cols) +
+      labs(y = "Average Hits", x = NULL, fill = NULL) +
+      expand_limits(y = max(avg_df$hits) * 1.1) +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_blank(),  # remove x-axis labels
+        axis.ticks.x = element_blank(), # remove x-axis ticks
+        legend.position = "none"        # remove legend
+      )
   })
+  
+  
   
   # Line chart with consistent colors
   output$lineChart <- renderPlotly({
@@ -151,73 +250,123 @@ server <- function(input, output, session) {
       )
   })
   
-  # # Scatter plot with consistent colors (optional, if you have one)
-  # output$scatterPlot <- renderPlotly({
-  #   res <- results()
-  #   if (is.null(res)) return(NULL)
-  #   df <- res$interest_over_time
-  #   cols <- keyword_colors()
-  #   
-  #   plot_ly(df, x = ~date, y = ~hits, color = ~keyword,
-  #           colors = cols,
-  #           type = "scatter", mode = "markers")
-  # })
- 
-output$scatterPlot <- renderPlotly({
-  res <- results()
-  if (is.null(res)) return(NULL)
-  df <- res$interest_over_time
-  
-  # Filter to two keywords only
-  kws <- unique(df$keyword)
-  if(length(kws) < 2) return(NULL)
-  if(length(kws) > 2) kws <- kws[1:2]
-  
-  # Reshape data wide: each keyword's hits in its own column
-  library(tidyr)
-  df_wide <- df %>% 
-    filter(keyword %in% kws) %>%
-    select(date, keyword, hits) %>%
-    pivot_wider(names_from = keyword, values_from = hits)
-  
-  plot_ly(df_wide, x = ~get(kws[1]), y = ~get(kws[2]), type = 'scatter', mode = 'markers') %>%
-    layout(
-      xaxis = list(title = kws[1]),
-      yaxis = list(title = kws[2]),
-      title = paste("Scatter plot of", kws[1], "vs", kws[2], "hits")
-    )
-})
-   
+  output$streamgraphPlot <- renderPlotly({
+    res <- results()
+    if (is.null(res)) return(NULL)
+    df <- res$interest_over_time
+    
+    df <- df %>%
+      mutate(date = as.Date(date),
+             hits = as.numeric(hits)) %>%
+      filter(!is.na(hits))
+    
+    kws <- unique(df$keyword)
+    cols <- keyword_colors()
+    # cols <- c("#1f77b4", "#ff7f0e", "#2ca02c") # your color palette
+    
+    p <- plot_ly()
+    
+    for (i in seq_along(kws)) {
+      kw <- kws[i]
+      df_sub <- df %>% filter(keyword == kw)
+      
+      p <- add_trace(p,
+                     x = ~date,
+                     y = ~hits,
+                     name = kw,
+                     type = 'scatter',
+                     mode = 'none',  # no markers or lines
+                     stackgroup = 'one',
+                     fillcolor = cols[(i - 1) %% length(cols) + 1],
+                     data = df_sub)
+    }
+    
+    p %>%
+      layout(
+        xaxis = list(title = "Date"),
+        yaxis = list(title = "Search Interest (Hits)", zeroline = FALSE),
+        legend = list(title = list(text = "Keywords"))
+      )
+  })
+
   output$map <- renderLeaflet({
     res <- results()
     if (is.null(res)) return(NULL)
     geo_data <- res$interest_by_region
     if (nrow(geo_data) == 0) return(NULL)
     
-    cleaned_locations <- clean_location_names(res$interest_by_region$location)
     geo_data$location_clean <- clean_location_names(geo_data$location)
     
-    # Rename spatial data column for easier join & labeling
-    vietnam_geo_mod <- vietnam_geo %>% 
+    # Pivot to wide format: one row per location, each keyword as a column
+    wide_geo <- geo_data %>%
+      tidyr::pivot_wider(names_from = keyword, values_from = hits, values_fill = 0)
+    
+    # Calculate max-hit keyword and its value for coloring
+    # Get list of keyword columns only
+    keyword_cols <- setdiff(names(wide_geo), c("location", "location_clean", "geo", "gprop"))
+
+    # Make sure hit_vals carries names
+    wide_geo <- wide_geo %>%
+      rowwise() %>%
+      mutate(
+        max_hits = max(c_across(all_of(keyword_cols)), na.rm = TRUE),
+        max_keyword = {
+          hit_vals <- c_across(all_of(keyword_cols))
+          names(hit_vals) <- keyword_cols
+          
+          # Check if all values are NA or zero
+          if (all(is.na(hit_vals)) || all(hit_vals == 0, na.rm = TRUE)) {
+            max_name <- NA_character_  # or "None"
+          } else {
+            max_idx <- which.max(replace(hit_vals, is.na(hit_vals), -Inf))  # treat NA as -Inf
+            max_name <- names(hit_vals)[max_idx]
+          }
+          
+          # message("Row ", location_clean, " -> max_name: ", max_name, 
+          #         " -> hit_vals: ", paste(hit_vals, collapse = ", "))
+          max_name
+        } %>% as.character()
+      ) %>%
+      ungroup()
+    
+    
+    # Prepare Vietnam spatial data
+    vietnam_geo_mod <- vietnam_geo %>%
       dplyr::rename(location_clean = VARNAME_1)
     
-    # Join Google Trends data with Vietnam spatial data by "location"
-    merged_data <- vietnam_geo_mod %>% 
-      left_join(geo_data, by = "location_clean")
+    # Merge with spatial data
+    merged_data <- vietnam_geo_mod %>%
+      left_join(wide_geo, by = "location_clean")
     
-    # Create color palette based on hits
-    pal <- colorNumeric("YlOrRd", domain = merged_data$hits, na.color = "transparent")
-
-    # Load world polygons (medium scale) as sf
+    # Create a color palette (one color per keyword)
+    keyword_list <- unique(geo_data$keyword)
+    colors_for_map <- keyword_colors()
+    
+    # Build color vector: assign color based on the max_keyword
+    merged_data$fill_color <- colors_for_map[merged_data$max_keyword]
+    
+    # Create tooltip showing hits for all keywords
+    merged_data$tooltip <- apply(merged_data, 1, function(row) {
+      paste0(
+        row["location_clean"], "<br>",
+        paste(
+          sapply(keyword_list, function(k) {
+            paste0(k, ": ", round(as.numeric(row[[k]]), 2))
+          }),
+          collapse = "<br>"
+        )
+      )
+    })
+    
+    # Load world polygons
     world <- ne_countries(scale = "medium", returnclass = "sf")
     
     # Create mask polygon: world minus Vietnam
     mask <- st_difference(st_union(world), st_union(vietnam_geo_mod))
     
-    leaflet(merged_data) %>%
+    map <- leaflet(merged_data) %>%
       addTiles() %>%
       
-      # Add gray mask polygon for everything except Vietnam
       addPolygons(
         data = mask,
         fillColor = "gray",
@@ -225,10 +374,10 @@ output$scatterPlot <- renderPlotly({
         stroke = FALSE
       ) %>%
       
-      setView(lng = 106, lat = 16, zoom = 4) %>%
+      setView(lng = 106, lat = 16, zoom = 5) %>%
       
       addPolygons(
-        fillColor = ~pal(hits),
+        fillColor = ~fill_color,
         fillOpacity = 0.7,
         color = "white",
         weight = 1,
@@ -241,53 +390,69 @@ output$scatterPlot <- renderPlotly({
           fillOpacity = 0.9,
           bringToFront = TRUE
         ),
-        label = ~paste0(location_clean, ": ", round(hits, 2)),
+        label = lapply(merged_data$tooltip, htmltools::HTML),
         labelOptions = labelOptions(
           style = list("font-weight" = "normal", padding = "3px 8px"),
           textsize = "15px",
           direction = "auto"
         )
-      ) %>%
-      addLegend(
-        pal = pal,
-        values = ~hits,
-        opacity = 0.7,
-        title = "Hits",
-        position = "bottomright"
       )
+    
+    # Add legend
+      map <- map %>%
+        addLegend(
+          colors = colors_for_map,
+          labels = names(colors_for_map),
+          opacity = 0.7,
+          title = "Keywords",
+          position = "bottomright"
+        )
+    
+    map
+    
   })
   
+    
   output$llm_output <- renderText({
     res <- results()
     if (is.null(res)) return("Awaiting input...")
     
-    df <- res$interest_over_time
-    
-    # Prepare a brief summary of trend data as text input
-    # For simplicity, take the first 20 rows and format key info
-    trend_summary <- paste(
-      apply(df, 1, function(row) {
-        paste0(
-          "Date: ", row["date"], 
-          ", Keyword: ", row["keyword"], 
-          ", Hits: ", row["hits"]
-        )
-      }),
-      collapse = "\n"
-    )
-    
-    # Construct prompt for Gemini
-    prompt <- paste0(
-      "You are a data analyst. Based on the following Google Trends data over time:\n",
-      trend_summary,
-      "\nPlease write 3 to 5 sentences analyzing the trend of each keyword, and conclude any correlation or relationship between them. ",
-      "For example, if people search for keyword 1, they tend to also search for keyword 2. Provide an insightful trend analysis."
-    )
-    
-    # Call Gemini LLM
-    # gemini(prompt)
-    analysis_text
+    if (input$data_source == "Online") {
+      # --- Online mode: dynamically generate prompt ---
+      df <- res$interest_over_time
+      
+      trend_summary <- paste(
+        apply(df, 1, function(row) {
+          paste0(
+            "Date: ", row["date"], 
+            ", Keyword: ", row["keyword"], 
+            ", Hits: ", row["hits"]
+          )
+        }),
+        collapse = "\n"
+      )
+      
+      prompt <- paste0(
+        "You are a data analyst. Based on the following Google Trends data over time:\n",
+        trend_summary,
+        "\nPlease write 3 to 5 sentences analyzing the trend of each keyword, and conclude any correlation or relationship between them."
+      )
+      
+      gemini(prompt)  # 🚀 Call Gemini LLM here
+      
+    } else {
+      # --- Sample mode: use preloaded analysis ---
+      switch(input$data_source,
+             "Sample 1" = analysis_text_1,
+             "Sample 2" = analysis_text_2,
+             "Sample 3" = analysis_text_3,
+             "Sample 4" = analysis_text_4,
+             "Sample 5" = analysis_text_5,
+             "No analysis available.")
+    }
   })
+  
+  remove_modal_spinner()
 }
 
 # Run app
