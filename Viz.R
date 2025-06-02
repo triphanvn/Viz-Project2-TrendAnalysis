@@ -433,9 +433,11 @@ server <- function(input, output, session) {
       )
       
       prompt <- paste0(
-        "You are a data analyst. Based on the following Google Trends data over time:\n",
+        # "You are a data analyst. Based on the following Google Trends data over time:\n",
+       "You are a senior Data Analyst with strong experience in interpreting complex datasets. For each dataset, table, or chart I provide, analyze the key patterns, trends, or anomalies.",
         trend_summary,
-        "\nPlease write 3 to 5 sentences analyzing the trend of each keyword, and conclude any correlation or relationship between them."
+       # "\nPlease write 3 to 5 sentences analyzing the trend of each keyword, and conclude any correlation or relationship between them."
+      "Your task: Write 3 to 5 clear, concise sentences. Describe the trend of each keyword (e.g. rising, falling, seasonal). Conclude any correlation or relationship between the keywords. Use plain English that a non-technical reader (like a marketer or product manager) can easily understand"
       )
       
       gemini(prompt)  # 🚀 Call Gemini LLM here
