@@ -1,4 +1,4 @@
-# 📌 **Project Proposal | Search Trend Analysis Dashboard**
+# 📌 **Search Trend Analysis Dashboard**
 
 **Designed and Developed by Doan Quang Hung and Phan Minh Tri**
 

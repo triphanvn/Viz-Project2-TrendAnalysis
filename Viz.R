@@ -453,8 +453,6 @@ server <- function(input, output, session) {
              "No analysis available.")
     }
   })
-  
-  remove_modal_spinner()
 }
 
 # Run app
